@@ -46,8 +46,9 @@ def _get(path: str, params: dict | None = None) -> requests.Response:
 
 @tool
 def get_repo_metadata(owner: str, repo: str) -> str:
-    """Get a GitHub repository's high-level metadata: description, primary
-    language, license, star/fork counts, open issue count, and when it was
+    """Get a GitHub repository's high-level metadata: description, author
+    (the owning user/organization), primary language, license, star/fork
+    counts, open issue count, when the repo was created, and when it was
     last pushed to. Call this first for a quick overview of any repo."""
     response = _get(f"/repos/{owner}/{repo}")
     if response.status_code == 404:
@@ -56,15 +57,19 @@ def get_repo_metadata(owner: str, repo: str) -> str:
         return f"Error: GitHub API returned {response.status_code}: {response.text[:200]}"
     data = response.json()
     license_name = (data.get("license") or {}).get("name", "none")
+    owner_login = (data.get("owner") or {}).get("login", owner)
+    owner_type = (data.get("owner") or {}).get("type", "unknown")
     return (
         f"name: {data['full_name']}\n"
         f"description: {data.get('description') or '(none)'}\n"
+        f"author: {owner_login} ({owner_type})\n"
         f"primary_language: {data.get('language') or 'unknown'}\n"
         f"license: {license_name}\n"
         f"stars: {data['stargazers_count']}\n"
         f"forks: {data['forks_count']}\n"
         f"open_issues: {data['open_issues_count']}\n"
         f"default_branch: {data['default_branch']}\n"
+        f"repo_created: {data['created_at']}\n"
         f"last_pushed: {data['pushed_at']}\n"
         f"archived: {data['archived']}"
     )

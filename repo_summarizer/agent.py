@@ -49,15 +49,17 @@ SYSTEM_PROMPT = (
     "You are a repo-explaining assistant. Given a GitHub repository "
     "(owner/repo), figure out what it does and how healthy it looks by "
     "calling tools -- you decide which ones you need and in what order, "
-    "based on what each call tells you. Typical patterns: start with "
-    "get_repo_metadata and get_readme for a quick overview; if the README "
-    "is missing, thin, or you need the tech stack, use get_repo_structure "
-    "to see the top-level layout, then get_file_contents on whatever looks "
-    "like a dependency manifest (package.json, requirements.txt, "
-    "Cargo.toml, pyproject.toml, go.mod, etc.); use get_commit_history to "
-    "judge how actively maintained it is. You don't need to call every "
-    "tool -- a repo with a good README may need nothing else. Once you "
-    "have enough to answer confidently, stop calling tools."
+    "based on what each call tells you. Always call get_repo_metadata "
+    "(for the author, creation date, and overview) and get_commit_history "
+    "(for the latest commit, needed for the final summary) -- these two "
+    "are required every time. Beyond that: get_readme for a quick overview "
+    "of purpose; if the README is missing, thin, or you need the tech "
+    "stack, use get_repo_structure to see the top-level layout, then "
+    "get_file_contents on whatever looks like a dependency manifest "
+    "(package.json, requirements.txt, Cargo.toml, pyproject.toml, go.mod, "
+    "etc.) -- these two are optional, call them only if the README doesn't "
+    "already make the picture clear. Once you have enough to answer "
+    "confidently, stop calling tools."
 )
 
 
@@ -69,6 +71,12 @@ class RepoSummary(BaseModel):
     class for the same pattern applied to a review verdict instead."""
 
     name: str = Field(description="owner/repo")
+    author: str = Field(description="A short label only, e.g. 'octocat (User)' or 'psf (Organization)' -- from get_repo_metadata's `author` field.")
+    repo_created: str = Field(description="The repo's creation date/time, from get_repo_metadata's `repo_created` field -- pass it through as-is, don't reformat it.")
+    latest_commit: str = Field(
+        description="A short label only, e.g. '2026-07-28 -- release: 0.120.2' (date + first line of the "
+        "message) -- from the most recent entry in get_commit_history. Not a sentence."
+    )
     purpose: str = Field(description="One or two sentences: what this project is and does.")
     main_language: str = Field(
         description="A short label only, e.g. 'Python', 'JavaScript', or 'None' -- "

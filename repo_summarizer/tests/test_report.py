@@ -11,6 +11,9 @@ from repo_summarizer.report import render_html
 def _sample_summary(**overrides) -> RepoSummary:
     defaults = dict(
         name="octocat/Hello-World",
+        author="octocat (User)",
+        repo_created="2011-01-26T19:01:12Z",
+        latest_commit="2024-08-20 -- Update README.md",
         purpose="A minimal demo repository used to teach Git and GitHub basics.",
         main_language="None",
         key_files=["README"],
@@ -33,6 +36,12 @@ class TestRenderHtml:
         html_out = render_html(summary)
         assert summary.purpose in html_out
         assert summary.summary in html_out
+
+    def test_includes_author_created_and_latest_commit(self):
+        html_out = render_html(_sample_summary())
+        assert "octocat (User)" in html_out
+        assert "2011-01-26T19:01:12Z" in html_out
+        assert "2024-08-20 -- Update README.md" in html_out
 
     def test_includes_key_files(self):
         html_out = render_html(_sample_summary(key_files=["README.md", "src/main.py"]))

@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 chroma_db/
 repo_summarizer/reports/
+trip_planner/reports/

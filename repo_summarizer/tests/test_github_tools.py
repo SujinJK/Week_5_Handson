@@ -30,12 +30,14 @@ class TestGetRepoMetadata:
         mock_get.return_value = _mock_response(200, {
             "full_name": "octocat/Hello-World",
             "description": "My first repository on GitHub!",
+            "owner": {"login": "octocat", "type": "User"},
             "language": "Python",
             "license": {"name": "MIT License"},
             "stargazers_count": 100,
             "forks_count": 10,
             "open_issues_count": 2,
             "default_branch": "main",
+            "created_at": "2011-01-26T19:01:12Z",
             "pushed_at": "2024-01-01T00:00:00Z",
             "archived": False,
         })
@@ -43,16 +45,21 @@ class TestGetRepoMetadata:
         assert "octocat/Hello-World" in result
         assert "Python" in result
         assert "MIT License" in result
+        assert "author: octocat (User)" in result
+        assert "repo_created: 2011-01-26T19:01:12Z" in result
 
     @patch("repo_summarizer.github_tools.requests.get")
     def test_handles_missing_license(self, mock_get):
         mock_get.return_value = _mock_response(200, {
-            "full_name": "o/r", "description": None, "language": None, "license": None,
+            "full_name": "o/r", "description": None, "owner": {"login": "o", "type": "Organization"},
+            "language": None, "license": None,
             "stargazers_count": 0, "forks_count": 0, "open_issues_count": 0,
-            "default_branch": "main", "pushed_at": "2024-01-01T00:00:00Z", "archived": False,
+            "default_branch": "main", "created_at": "2020-01-01T00:00:00Z",
+            "pushed_at": "2024-01-01T00:00:00Z", "archived": False,
         })
         result = get_repo_metadata.invoke({"owner": "o", "repo": "r"})
         assert "license: none" in result
+        assert "author: o (Organization)" in result
 
     @patch("repo_summarizer.github_tools.requests.get")
     def test_handles_404(self, mock_get):

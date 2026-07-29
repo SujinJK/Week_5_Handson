@@ -98,3 +98,72 @@ that recent activity was mostly routine automatic updates rather than new featur
 which it correctly read as a sign of a mature, stable project rather than one nobody's
 maintaining anymore. That's real evidence the AI was actually deciding what to check
 based on what it found, not just running through a script.
+
+We also gave both of these mini assistants a nicer way to show their results: instead
+of just plain text in a terminal, they now also produce a proper little webpage report
+-- clear headline, color-coded status badges, and a clean summary -- that opens in any
+browser. Building this actually caught a real, if minor, problem: the first version
+let the AI describe the repo's programming language however it wanted, and for one
+documentation-only project, it wrote a full sentence there instead of a short word --
+which looked fine as plain text but broke the visual layout once we could actually see
+it rendered. We fixed it by explicitly telling the AI "keep this one short," and it did.
+That's a nice example of a mistake you literally cannot see until you look at something
+visually instead of just as raw text.
+
+A third, smaller project: a trip budget planner
+The third and final mini assistant handles a very common real-world combination: mixing
+"soft," researched information with "hard," exact numbers. You describe a trip in plain
+language -- "Tokyo for 5 days with a $1500 budget" -- and it has to (1) search the web
+for realistic price ranges for flights, hotels, food, and transport, since it can't know
+those from memory, and (2) do the actual arithmetic to split that budget across
+categories and check the numbers genuinely add up, since guessing at math is exactly
+the kind of mistake an AI shouldn't be trusted to do in its head.
+
+One deliberate safety choice here: the original idea was to give the AI a full Python
+"REPL" -- basically letting it run any code it wants -- to do the math. We chose not to.
+Since this assistant also reads real search results from the open internet, and those
+results are not something we control or trust, letting the AI run arbitrary code based
+on what it read online is a genuine risk, not just an abstract worry -- a malicious
+webpage could try to trick the AI into running harmful commands on your own computer.
+Instead, we gave it the same kind of restricted, "numbers and basic arithmetic only"
+calculator used since week 4, which is more than capable of splitting a budget, but is
+structurally incapable of doing anything beyond plain arithmetic.
+
+We also hit a real, slightly funny mistake while testing this live: our very first test
+run of "a $1500 budget" silently turned into "a 500 budget," because of how the command
+line itself interpreted the dollar sign -- nothing to do with our actual code. The AI
+handled the (accidentally wrong) $500 version very sensibly anyway, correctly explaining
+that flights alone would blow that budget and suggesting sensible alternatives -- which
+was itself a good reminder that "the AI gave a smart-sounding answer" and "the AI
+answered the question you actually meant to ask" are two different things worth
+separately checking. Once we fixed how we typed the command, it correctly planned a
+real $1500, 5-day Tokyo trip: researching realistic prices, computing a full breakdown
+that used about 81% of the budget, and correctly judging the trip as comfortably
+affordable with some money to spare.
+
+A few small but real improvements after testing
+After trying these out, we made two more upgrades:
+
+- The GitHub repo explainer now also reports who owns the project, when it was
+  originally created, and its single most recent commit -- not just whether it
+  "looks" active. Interestingly, once we required it to always check the actual
+  commit history, it corrected its own earlier verdict: it had first called GitHub's
+  joke demo repo "active," based only on the fact that lots of people still poke at
+  it; once forced to check real commits, it correctly changed that to "unmaintained,"
+  since nobody has actually committed real content to it since 2012. Requiring a bit
+  more information changed the AI's actual judgment, not just what it reported.
+- The trip planner now also explicitly captures where you're traveling from, not
+  just where you're going. If you don't say where you're departing from, it no
+  longer quietly assumes a city and presents that guess as fact -- it clearly marks
+  the field as "not specified," while still using a reasonable, clearly-labeled
+  assumption to actually look up flight prices.
+
+We also caught one more real, easy-to-miss bug while testing these changes: three
+separate small test suites (one per mini assistant) each passed perfectly fine on
+their own, but broke the moment we ran all three together for the first time --
+because two of them happened to have identically-named test files, and Python's
+default test-discovery got confused about which file was which. Nothing was wrong
+with the actual logic in any of them; it was purely a "how are these files organized
+and identified" problem, fixed with one configuration setting. A good example of how
+"each piece works on its own" and "all the pieces work correctly together" are two
+different things worth checking separately.

@@ -134,6 +134,17 @@ def render_html(summary: RepoSummary) -> str:
     flex-wrap: wrap;
     gap: 8px;
   }}
+  .meta-row {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    font-size: 13.5px;
+    color: var(--text-muted);
+  }}
+  .meta-row strong {{
+    color: var(--text);
+    font-weight: 600;
+  }}
   .pill {{
     display: inline-flex;
     align-items: center;
@@ -221,6 +232,12 @@ def render_html(summary: RepoSummary) -> str:
       <span class="pill pill-{_esc(summary.health)}">{_esc(_HEALTH_LABELS.get(summary.health, summary.health))}</span>
       <span class="pill pill-neutral">{_esc(summary.main_language)}</span>
       <span class="pill {beginner_class}">{_esc(beginner_label)}</span>
+    </div>
+
+    <div class="meta-row mono">
+      <span>Author: <strong>{_esc(summary.author)}</strong></span>
+      <span>Created: <strong>{_esc(summary.repo_created)}</strong></span>
+      <span>Latest commit: <strong>{_esc(summary.latest_commit)}</strong></span>
     </div>
 
     <section>

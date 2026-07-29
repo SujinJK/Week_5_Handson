@@ -18,6 +18,7 @@ See the main README for a side-by-side comparison of the two agents.
 Run:
     python -m repo_summarizer.agent octocat/Hello-World
 """
+import pathlib
 import sys
 
 from dotenv import load_dotenv
@@ -27,6 +28,8 @@ from pydantic import BaseModel, Field
 from typing import Literal
 
 from repo_summarizer.github_tools import TOOLS, TOOLS_BY_NAME
+
+REPORTS_DIR = pathlib.Path(__file__).parent / "reports"
 
 # Same fix as ../agent.py: a fetched README or file can contain Unicode
 # characters (e.g. the arrows in this project's own README, U+2192) that
@@ -67,7 +70,10 @@ class RepoSummary(BaseModel):
 
     name: str = Field(description="owner/repo")
     purpose: str = Field(description="One or two sentences: what this project is and does.")
-    main_language: str
+    main_language: str = Field(
+        description="A short label only, e.g. 'Python', 'JavaScript', or 'None' -- "
+        "not a sentence. Put any nuance (e.g. 'docs-only, no source code') in `summary` instead."
+    )
     key_files: list[str] = Field(description="The 1-4 files most worth reading first to understand this repo.")
     health: Literal["active", "stale", "unmaintained"] = Field(
         description="Best-effort read from recent commit activity and open issue count -- not a certainty."
@@ -117,6 +123,12 @@ def explore_repo(owner_repo: str) -> RepoSummary:
 
 
 def main() -> None:
+    # Imported here, not at module level, to avoid a circular import --
+    # report.py imports RepoSummary from this module, so this module can't
+    # import report.py at the top without the two files importing each
+    # other before either has finished loading.
+    from repo_summarizer.report import render_html
+
     if len(sys.argv) != 2 or "/" not in sys.argv[1]:
         print("Usage: python -m repo_summarizer.agent <owner/repo>")
         print("Example: python -m repo_summarizer.agent octocat/Hello-World")
@@ -129,6 +141,11 @@ def main() -> None:
     print("\nSUMMARY:")
     for field, value in summary.model_dump().items():
         print(f"  {field}: {value}")
+
+    REPORTS_DIR.mkdir(exist_ok=True)
+    report_path = REPORTS_DIR / f"{owner_repo.replace('/', '_')}.html"
+    report_path.write_text(render_html(summary), encoding="utf-8")
+    print(f"\nHTML report written to {report_path}")
 
 
 if __name__ == "__main__":

@@ -187,8 +187,11 @@ Deliberately simpler than the Nimbus agent: just the tool-calling loop and struc
 repo_summarizer/
 ├── github_tools.py       # 5 @tool functions wrapping GitHub's REST API via `requests`
 ├── agent.py               # tool-calling loop + RepoSummary structured output (run with python -m)
+├── report.py              # renders a RepoSummary as a self-contained HTML report card
+├── reports/               # (gitignored) generated HTML reports, one per repo summarized
 └── tests/
-    └── test_github_tools.py  # mocked unit tests, no network calls, no rate-limit risk
+    ├── test_github_tools.py  # mocked unit tests, no network calls, no rate-limit risk
+    └── test_report.py         # HTML rendering: content present, HTML-escaped, valid for all 3 health statuses
 ```
 
 ### Running it
@@ -199,6 +202,24 @@ python -m repo_summarizer.agent psf/requests
 ```
 
 Works against any public repo with no setup at all — GitHub's REST API allows unauthenticated read access, capped at 60 requests/hour. Optionally set `GITHUB_TOKEN` in `.env` (a plain personal access token, `public_repo` read scope is enough) to raise that to 5,000/hour if you're testing against several repos back-to-back.
+
+Every run also writes an HTML report to `repo_summarizer/reports/<owner>_<repo>.html` (see "HTML report" below) — the terminal trace stays as-is (still the clearest way to watch which tools get called), the HTML is an additional, easier-to-read rendering of just the final `SUMMARY:` block.
+
+### HTML report
+
+Plain terminal text works but isn't the easiest way to actually read a summary, so `report.py` renders the same `RepoSummary` object as a small, self-contained HTML report card — no external fonts, scripts, or stylesheets, so the file opens correctly straight from disk, no server needed. Matches your system's light/dark theme automatically.
+
+The card surfaces state as pills before detail (health, primary language, beginner-friendliness) — a repo's status should read at a glance, not require reading the summary paragraph first — then the purpose, a short list of the files most worth reading first, and the full summary underneath.
+
+```bash
+python -m repo_summarizer.agent MoonshotAI/Kimi-K3
+# ... terminal trace ...
+# HTML report written to repo_summarizer/reports/MoonshotAI_Kimi-K3.html
+```
+
+`repo_summarizer/reports/` is gitignored (generated output, not source) — every run overwrites that repo's report, same "always rebuilt fresh" philosophy as `ingest.py`'s vector store.
+
+**A real bug this surfaced immediately:** the first live run (against `MoonshotAI/Kimi-K3`, a docs-only model-release repo) filled `main_language` with a full sentence — *"None (documentation only — Markdown/PDF, no source code)"* — instead of a short label, because nothing in the `RepoSummary` schema constrained its format. That's invisible in plain terminal text but immediately obvious as an overflowing, awkward pill once rendered visually — the HTML report caught a real prompt/schema weakness that plain-text output had been silently absorbing all along. Fixed by adding a `Field(description=...)` telling the model explicitly: short label only, put nuance in `summary` instead. Confirmed fixed by re-running against the same repo.
 
 ### The five tools
 
@@ -216,7 +237,7 @@ Works against any public repo with no setup at all — GitHub's REST API allows 
 class RepoSummary(BaseModel):
     name: str
     purpose: str
-    main_language: str
+    main_language: str  # constrained via Field(description=...) to a short label, not a sentence -- see "HTML report" below for why
     key_files: list[str]
     health: Literal["active", "stale", "unmaintained"]
     beginner_friendly: bool

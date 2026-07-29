@@ -62,6 +62,12 @@ def calculator(expression: str) -> str:
     """Evaluate a plain arithmetic expression. Use this for any math instead of
     computing it yourself -- addition, subtraction, multiplication, division,
     powers, modulo, parentheses. Example: '(49.99 * 2) - 15'."""
+    # Important beginner gotcha: this docstring is not just documentation for
+    # humans reading the code. `@tool` reads it at import time and sends it to
+    # Claude as the tool's official description -- it's how the model decides
+    # *when* to call this tool. Change the wording here and you change what
+    # the model thinks this tool is for, exactly as if you'd edited Week 4's
+    # hand-written `input_schema["description"]` string.
     try:
         tree = ast.parse(expression, mode="eval")
         return str(_eval_node(tree.body))
@@ -83,5 +89,9 @@ def search_knowledge_base(query: str) -> str:
 # call like the two tools above, so the agent loop treats all three identically.
 web_search = DuckDuckGoSearchRun()
 
+# TOOLS is the list agent.py hands to `llm.bind_tools(...)`, so the model knows
+# all three exist. TOOLS_BY_NAME exists because the model only ever tells us
+# which tool it wants *by name* (a string, inside each tool call) -- this dict
+# is how agent.py's loop turns that name back into the actual callable to run.
 TOOLS = [calculator, search_knowledge_base, web_search]
 TOOLS_BY_NAME = {t.name: t for t in TOOLS}

@@ -1,0 +1,76 @@
+What this project is, in plain words
+Last week, we built a small AI assistant completely by hand -- every piece of logic
+for "figure out what to do, do it, check your own work" was written in plain Python,
+talking directly to Claude's API. This week, we rebuilt that exact same assistant, but
+this time using LangChain -- a popular toolkit that provides ready-made building
+blocks for exactly these kinds of AI assistants. The goal wasn't to make it do
+anything new -- it's the same assistant, answering the same kinds of questions about
+a made-up company's policies -- the goal was to see how much of last week's hand-written
+code a toolkit can do for us instead, and what we give up by letting it.
+
+What the assistant actually does (unchanged from last week)
+Ask it a question and it will:
+1. Think first -- sketch a short plan of what it thinks it'll need before doing anything.
+2. Act -- use whichever tools its plan called for: a calculator, a search tool that looks
+   through the company's internal documents, or a web search for anything not in those
+   documents.
+3. Double-check itself -- before showing you the answer, a second "reviewer" pass checks
+   whether the answer is actually correct and properly backed up by what was found, and
+   can send it back to be redone if something's wrong.
+
+What actually changed this week
+- Talking to Claude: last week we called Claude's API directly and had to manually read
+  its raw response to figure out what it wanted to do next. This week, LangChain gives
+  us a "chat model" object that handles that talking-to-the-AI part for us.
+- Giving it tools: last week we had to write out, by hand, a technical description of
+  each tool (what it's called, what information it needs) in a very particular format.
+  This week, we just write a normal Python function with a helpful comment describing
+  what it does, and LangChain automatically turns that into the technical description
+  Claude needs. Much less typing, much less room for mistakes.
+- Getting a clean verdict from the reviewer: last week, getting the reviewer to give us
+  a clean "approved" or "needs fixing, here's why" required us to manually pick apart a
+  block of text and hope it was formatted the way we expected. This week, we just tell
+  LangChain "I want the answer in exactly this shape" and it hands back a properly
+  structured, guaranteed-correct answer every time -- no more hoping.
+- The web search tool: last week's web search ran entirely on Anthropic's own servers,
+  which caused several tricky, hard-to-predict bugs (explained in last week's summary).
+  This week we swapped it for a much simpler web search tool that runs like any other
+  tool, which got rid of that entire category of headaches -- though it's worth knowing
+  this was a deliberate choice we made, not something LangChain forced on us, and it
+  means the two projects' web searches don't necessarily find the same things.
+
+Where things came from
+- The actual "search the company's documents" logic (turning documents into searchable
+  chunks, finding the best matches, double-checking those matches with a second pass) is
+  completely unchanged from Week 3 -- we didn't touch how the search itself works, only
+  how the assistant is allowed to call it.
+- The four-step thinking pattern (plan, act, reflect, and having a separate "reviewer"
+  role) is unchanged from Week 4 -- we didn't redesign how the assistant thinks, only
+  rewrote the plumbing underneath it.
+
+Real bugs we hit while building this (not hypothetical)
+- The new web search tool failed to even start up, because the search library behind it
+  had recently been renamed by its developers, and our setup instructions still listed
+  the old name. Nothing was wrong with our code -- it just needed the updated name.
+- The assistant failed the first time we actually tried asking it a question, with an
+  error saying the API key wasn't valid. We proved this had nothing to do with anything
+  we built (by testing the exact same key directly against Claude's service and getting
+  the same failure) -- the key itself had simply stopped working and needed to be
+  replaced with a fresh one.
+
+How much code actually got saved
+Counting only the real lines of working logic (not comments, not blank lines), the
+rewritten version needed about 30% less code than the hand-written one. Some of that
+saving is genuinely thanks to the toolkit doing work for us automatically. But some of
+it is because we also swapped out the complicated web search for a simpler one at the
+same time -- so it wouldn't be fair to say "the toolkit alone cuts your code by a
+third." Both changes together did.
+
+What this does and doesn't prove
+This shows, concretely, that a toolkit like LangChain removes a real amount of tedious,
+error-prone hand-writing -- especially around describing tools and getting reliable,
+structured answers back. It does not mean the toolkit is simply "better" -- it hides
+some of what's actually happening under the hood, and this project intentionally didn't
+use some of the toolkit's more advanced, automated pieces (like fully automated
+multi-step agents) specifically so it would stay easy to compare, step by step, against
+what we built by hand last week.

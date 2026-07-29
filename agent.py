@@ -33,6 +33,20 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from pydantic import BaseModel, Field
 from typing import Literal
 
+# The four message types below are LangChain's provider-agnostic stand-ins
+# for the raw {"role": ..., "content": ...} dicts Week 4 built by hand:
+#   SystemMessage -- the instructions that set the model's behavior (was
+#                    the `system=` string in Week 4's client.messages.create)
+#   HumanMessage  -- something the user (or us, on the user's behalf) said
+#   AIMessage     -- something the model said back -- what `.invoke()` returns
+#   ToolMessage   -- a tool's result, sent back labeled with `tool_call_id` so
+#                    the model knows exactly which of its own tool calls this
+#                    result answers (this matters once more than one tool is
+#                    called in the same turn -- the id is how they don't get
+#                    mixed up)
+# A `messages` list built from these is what gets replayed to the model on
+# every call, the same conversation-history idea Week 4 used with plain dicts.
+
 # Same Windows console fix as Week 4 -- Claude's output can contain Unicode
 # characters (e.g. a proper minus sign, U+2212) that Windows' default
 # console codepage (cp1252) can't print.
@@ -94,6 +108,28 @@ class Critique(BaseModel):
     issues: list[str] = Field(default_factory=list)
 
 
+# `ChatAnthropic` is LangChain's wrapper around the same `anthropic` client
+# Week 4 called directly -- it's the "chat model" building block this week's
+# material refers to. Nothing below mutates `_llm` in place:
+#   .bind_tools(TOOLS)             returns a *new* runnable that behaves like
+#                                   _llm, except every call now also sends
+#                                   the tool schemas, so the model can choose
+#                                   to request one instead of answering.
+#   .with_structured_output(...)   returns a *different* new runnable whose
+#                                   .invoke() no longer gives back an
+#                                   AIMessage at all -- it gives back an
+#                                   already-parsed instance of whatever
+#                                   Pydantic class you pass it (Critique,
+#                                   here). This project doesn't chain these
+#                                   together with LangChain's `|` operator
+#                                   (LCEL) anywhere -- each of the three
+#                                   variables below is used standalone,
+#                                   which is enough for this rebuild's scope,
+#                                   but "a runnable you build by piping
+#                                   simpler runnables into each other with
+#                                   `|`" is what "chain" usually refers to in
+#                                   LangChain material, in case you see that
+#                                   term elsewhere and don't see one here.
 _llm = ChatAnthropic(model=MODEL, max_tokens=4096)
 _llm_with_tools = _llm.bind_tools(TOOLS)
 _critic_llm = ChatAnthropic(model=MODEL, max_tokens=500).with_structured_output(Critique)
@@ -123,17 +159,30 @@ def run_agent_loop(messages: list) -> tuple[str, list]:
     tool here is client-side (see tools.py for why that's true this time)."""
     for _ in range(MAX_TOOL_ITERATIONS):
         response = _llm_with_tools.invoke(messages)
+        # The model's own reply becomes part of the history too, not just the
+        # tool results -- otherwise the next call would have no record that
+        # it ever asked for a tool in the first place.
         messages = messages + [response]
 
+        # `response.tool_calls` is a plain list, empty if the model decided
+        # to answer directly instead of requesting a tool. This one `if` is
+        # the entire replacement for Week 4's `stop_reason == "tool_use"`
+        # check plus its content-block scanning.
         if not response.tool_calls:
             return _text(response), messages
 
+        # A single response can request more than one tool at once (e.g. the
+        # calculator and search_knowledge_base together) -- each `call` is a
+        # dict with the tool's name, its arguments, and an id.
         for call in response.tool_calls:
             tool_fn = TOOLS_BY_NAME[call["name"]]
             result = tool_fn.invoke(call["args"])
             preview = result if len(result) <= 200 else result[:200] + "..."
             print(f"  -> {call['name']}({call['args']})")
             print(f"  <- {preview}")
+            # `tool_call_id=call["id"]` is what ties this result back to the
+            # specific request it's answering -- required so the model can
+            # match multiple simultaneous tool results to the calls it made.
             messages = messages + [ToolMessage(content=str(result), tool_call_id=call["id"])]
 
     raise RuntimeError(f"Agent did not finish within {MAX_TOOL_ITERATIONS} tool iterations")

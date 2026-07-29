@@ -4,6 +4,58 @@ Week 4's hand-rolled agent (plan → act/observe → reflect, no framework), reb
 
 Same corpus, same underlying retriever (Week 3/4's hybrid vector+BM25+rerank pipeline), same four agentic patterns. Only the scaffolding changes.
 
+## Core concepts, defined
+
+LangChain terminology, in plain words, in the order you'd meet them reading `agent.py` top to bottom:
+
+| Term | Plain-English definition | Where it appears here |
+|---|---|---|
+| **Chat model** | A wrapper around a provider's model (Claude, GPT, etc.) that gives every provider the same `.invoke(messages)` interface, so the rest of your code doesn't need to know which one it's talking to. | `ChatAnthropic(model=...)` |
+| **Message** | One turn of a conversation, tagged with *who* said it, so the model can tell instructions from user questions from its own past replies. | `SystemMessage`, `HumanMessage`, `AIMessage`, `ToolMessage` — see the comment block above them in `agent.py` |
+| **Tool** | A function the model can ask to have run on its behalf, described to it as a name + a plain-English description + a list of typed arguments. The model never runs it — it only ever *requests* it; your code decides whether to actually call it. | `calculator`, `search_knowledge_base`, `web_search` in `tools.py` |
+| **`@tool` decorator** | Turns an ordinary Python function into a tool automatically, generating the argument schema from its type hints and the description from its docstring — instead of writing that schema out by hand. | `tools.py` |
+| **Binding tools / `bind_tools()`** | Attaching a list of tools to a chat model so every future call tells the model "these are the tools you're allowed to request this turn." Returns a new object; it doesn't change the original model. | `_llm_with_tools = _llm.bind_tools(TOOLS)` |
+| **Tool call** | The model's request to run a specific tool with specific arguments, found in `response.tool_calls` after invoking a tools-bound model. | Read inside `run_agent_loop()` |
+| **Tool-calling loop** | The repeat-until-done cycle: ask the model something → if it requested a tool, run the tool and tell it the result → ask again → repeat until it answers directly instead of requesting another tool. | `run_agent_loop()` |
+| **Structured output** | Instead of getting back free-form text you'd have to parse yourself, you describe the *shape* you want (a Pydantic class) and get back an object of exactly that shape, already validated. | `Critique` class + `.with_structured_output(Critique)` |
+| **Runnable** | LangChain's umbrella term for "anything with a uniform `.invoke()` (and `.batch()`/`.stream()`) interface" — chat models, tool-bound models, structured-output wrappers, and (see "chain" below) combinations of these are all runnables. | `_llm`, `_llm_with_tools`, and `_critic_llm` are all runnables |
+| **Chain** | A runnable built by piping other runnables together, most often with LangChain's `\|` operator (e.g. `prompt \| llm \| parser`), so a multi-step sequence becomes one callable unit. **Not used in this project** — see the comment above `_llm_with_tools` in `agent.py` for why the three model variables here are each used standalone instead of piped into one chain, and what using one would look like. |
+
+## Workflow diagram
+
+```mermaid
+flowchart TD
+    Q["question"] --> PLAN
+
+    subgraph PLAN["1. PLAN — make_plan()"]
+        P1["_llm.invoke([SystemMessage(plan prompt), HumanMessage(question)])"]
+    end
+
+    PLAN --> ACT
+
+    subgraph ACT["2. ACT / OBSERVE — run_agent_loop()"]
+        direction TB
+        A1["_llm_with_tools.invoke(messages)"] --> A2{"response.tool_calls\nnon-empty?"}
+        A2 -- "yes" --> A3["run each requested tool\n(calculator / search_knowledge_base / web_search)"]
+        A3 --> A4["append ToolMessage(result) to messages"]
+        A4 --> A1
+        A2 -- "no" --> A5["draft answer = response text"]
+    end
+
+    ACT --> REFLECT
+
+    subgraph REFLECT["3. REFLECT — critique_answer()"]
+        R1["_critic_llm.invoke([SystemMessage(critic prompt), HumanMessage(question + draft answer)])"]
+        R1 --> R2["Critique(verdict, issues)\nvia with_structured_output"]
+    end
+
+    REFLECT --> DECIDE{"verdict?"}
+    DECIDE -- "approve\n(or retry cap hit)" --> FINAL["FINAL ANSWER, printed to user"]
+    DECIDE -- "revise" --> FEEDBACK["append critic's issues\nas a HumanMessage"] --> ACT
+```
+
+Same shape as Week 4's pipeline diagram — plan once, loop through act/observe until no more tools are requested, reflect, and either finish or feed the critique back in for one more act/observe round (capped at `MAX_REFLECTION_CYCLES = 2`). What differs is entirely *inside* the ACT box and the REFLECT box, per the comparison table below.
+
 ## What changed vs. Week 4
 
 | | Week 4 (hand-rolled) | Week 5 (LangChain) |
@@ -40,6 +92,31 @@ Week_5_Handson/
 ├── requirements.txt
 └── .env.example
 ```
+
+## Tech reused from Week 3 and Week 4 vs. what's new this week
+
+**Reused unchanged (copied file-for-file, not reimplemented):**
+
+| From | File | What it does |
+|---|---|---|
+| Week 3 | `chunking.py` | Splits each document into sentence-respecting chunks (`semantic_chunk_text`) before embedding. |
+| Week 3 | `rag_tool.py` | The actual retrieval pipeline: local embeddings (`all-MiniLM-L6-v2`) for vector search, `rank_bm25` for keyword search, Reciprocal Rank Fusion to merge the two ranked lists, then a cross-encoder reranker for the final top-3. This is the *real* RAG logic — Week 5 never touches how retrieval works, only how it's exposed to the agent. |
+| Week 3 | `corpus/*.md` | The 5 sample Nimbus Cloud Storage policy documents. |
+| Week 4 | `ingest.py` | Builds/rebuilds the Chroma vector store from the corpus (reads both `.md` and `.pdf`, a Week 4 addition). |
+| Week 4 | The four agentic patterns themselves | Planning → acting/observing → reflecting → minimal multi-agent (worker + critic) — the *structure* of the agent is Week 4's design, only its implementation changed. |
+| Week 4 | The system prompts' intent | `PLAN_SYSTEM_PROMPT`, `AGENT_SYSTEM_PROMPT`, `CRITIC_SYSTEM_PROMPT` say the same things Week 4's did (including the generalized "whatever documents are currently indexed" wording from the tool-scope bug fix), just reworded slightly for this agent's own tool descriptions. |
+
+**New in Week 5 (the actual point of this week):**
+
+| Package | What it's used for |
+|---|---|
+| `langchain` / `langchain-core` | The chat-model, message, and tool abstractions described in "Core concepts" above. |
+| `langchain-anthropic` | `ChatAnthropic` — the LangChain-native wrapper around the same `anthropic` SDK Week 4 called directly. |
+| `langchain-community` | Provides `DuckDuckGoSearchRun`, the replacement for Week 4's Anthropic-native `web_search` tool. |
+| `ddgs` | The actual search library `DuckDuckGoSearchRun` calls under the hood (see "Bugs we actually hit" below for why this exact package name matters). |
+| `pydantic` | Defines the `Critique` schema used for structured output — new to this project's *use* of it for a schema, though it was already a transitive dependency via `chromadb`/`anthropic` in Week 3/4. |
+
+**Not reused, deliberately replaced:** Week 4's raw `anthropic.Anthropic().messages.create(...)` calls, its hand-written `input_schema` dicts, its manual `stop_reason`/content-block inspection, and its hand-rolled JSON-schema + `json.loads()` structured output — all replaced by the LangChain equivalents in the comparison table below.
 
 ## Setup
 

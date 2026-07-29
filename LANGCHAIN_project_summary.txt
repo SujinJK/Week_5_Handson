@@ -74,3 +74,27 @@ some of what's actually happening under the hood, and this project intentionally
 use some of the toolkit's more advanced, automated pieces (like fully automated
 multi-step agents) specifically so it would stay easy to compare, step by step, against
 what we built by hand last week.
+
+A second, smaller project: a GitHub repo explainer
+On top of rebuilding last week's assistant, we also built a second, separate mini
+assistant to practice the same two skills (giving an AI tools, and getting a reliably
+structured answer back) in a completely different setting. You give it any public
+GitHub project (like "psf/requests"), and it decides for itself -- by actually looking
+at what it finds -- which of five things it needs to check: the project's basic info
+(stars, language, license), its README, its file layout, a specific file, or its recent
+commit history. It then hands back a clean, structured summary: what the project is,
+which files matter most, whether it looks actively maintained, and whether it's
+beginner-friendly.
+
+The interesting part is that it doesn't follow one fixed checklist. We tested it on two
+very different real projects and watched it make different choices each time. For
+GitHub's own tiny joke "Hello World" demo repo, it checked the basic info, the README,
+and the file layout -- and correctly figured out that its thousands of stars and forks
+don't mean it's a real, actively-developed project, just a very popular practice
+target. For a large, genuinely important project (the "requests" Python library), it
+skipped looking at the file layout entirely, because the README already explained
+everything clearly -- but it did check the recent commit history, and correctly noticed
+that recent activity was mostly routine automatic updates rather than new features,
+which it correctly read as a sign of a mature, stable project rather than one nobody's
+maintaining anymore. That's real evidence the AI was actually deciding what to check
+based on what it found, not just running through a script.

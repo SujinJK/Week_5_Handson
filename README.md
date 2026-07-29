@@ -4,6 +4,8 @@ Week 4's hand-rolled agent (plan → act/observe → reflect, no framework), reb
 
 Same corpus, same underlying retriever (Week 3/4's hybrid vector+BM25+rerank pipeline), same four agentic patterns. Only the scaffolding changes.
 
+This project also includes a second, independent agent — a GitHub repo summarizer (`repo_summarizer/`) — that applies the same tool-binding and structured-output skills to a live external API instead of local RAG. See "A second agent: GitHub repo summarizer" below.
+
 ## Core concepts, defined
 
 LangChain terminology, in plain words, in the order you'd meet them reading `agent.py` top to bottom:
@@ -89,6 +91,10 @@ Week_5_Handson/
 ├── tests/
 │   ├── test_tools.py    # calculator arithmetic + safety, adapted for LangChain's .invoke({...}) call shape
 │   └── test_chunking.py # chunking correctness (same tests as Week 3/4)
+├── repo_summarizer/     # a SECOND, independent agent -- see "A second agent" section below
+│   ├── github_tools.py
+│   ├── agent.py
+│   └── tests/test_github_tools.py
 ├── requirements.txt
 └── .env.example
 ```
@@ -169,6 +175,89 @@ Two real issues, not just theoretical risks — same honesty policy as [Week 4's
 
 Same position as Week 4: no formal precision/recall/Hit@k evaluation was built for this rebuild specifically. `rag_tool.py` is unchanged from Week 3/4, so Week 3's existing `eval/retrieval_eval.py` (Hit@k) and `eval/generation_eval.py` (LLM-as-judge) results still describe its retrieval quality. What's new here — the LangChain scaffolding itself — was checked by running it against the same handful of manual questions Week 4 used, comparing behavior and output, not by a labeled eval set. See [Week 4's README](../Week_4_Handson/README.md#evaluation--why-theres-no-precisionrecall-here) for the fuller reasoning on why that's the right amount of rigor for a project this size.
 
+## A second agent: GitHub repo summarizer
+
+A separate, contrasting exercise of the exact same two LangChain building blocks — `bind_tools()` and `with_structured_output()` — applied to a completely different tool surface: live calls to a real external API (GitHub's REST API) instead of a local RAG retriever, and no fixed corpus at all. Point it at any public `owner/repo`, and it decides for itself which tools it actually needs to explain that repo.
+
+Deliberately simpler than the Nimbus agent: just the tool-calling loop and structured output — no separate planning call, no reflection/critique step. That's not a downgrade, it's a focused second look at the same core skills without re-deriving the fuller four-pattern architecture a second time.
+
+### Project structure
+
+```
+repo_summarizer/
+├── github_tools.py       # 5 @tool functions wrapping GitHub's REST API via `requests`
+├── agent.py               # tool-calling loop + RepoSummary structured output (run with python -m)
+└── tests/
+    └── test_github_tools.py  # mocked unit tests, no network calls, no rate-limit risk
+```
+
+### Running it
+
+```bash
+python -m repo_summarizer.agent octocat/Hello-World
+python -m repo_summarizer.agent psf/requests
+```
+
+Works against any public repo with no setup at all — GitHub's REST API allows unauthenticated read access, capped at 60 requests/hour. Optionally set `GITHUB_TOKEN` in `.env` (a plain personal access token, `public_repo` read scope is enough) to raise that to 5,000/hour if you're testing against several repos back-to-back.
+
+### The five tools
+
+| Tool | What it does |
+|---|---|
+| `get_repo_metadata` | Description, primary language, license, stars/forks, open issue count, last-pushed date. |
+| `get_readme` | Fetches and decodes the repo's README (base64-decoded from GitHub's API response), truncated if very long. |
+| `get_repo_structure` | Lists files/folders at a given path, one level at a time — deliberately *not* a full recursive tree, so the model has to explore deliberately (a repo like `torvalds/linux` would return thousands of entries in one shot otherwise) rather than being handed a wall of irrelevant paths. |
+| `get_file_contents` | Fetches one specific file, e.g. a dependency manifest (`package.json`, `requirements.txt`, `pyproject.toml`) once `get_repo_structure` has pointed at it. |
+| `get_commit_history` | Recent commits (message, author, date), to gauge how actively the repo is maintained. |
+
+### Structured output: `RepoSummary`
+
+```python
+class RepoSummary(BaseModel):
+    name: str
+    purpose: str
+    main_language: str
+    key_files: list[str]
+    health: Literal["active", "stale", "unmaintained"]
+    beginner_friendly: bool
+    summary: str
+```
+
+Same `with_structured_output()` pattern as the Nimbus agent's `Critique` class — the final answer is guaranteed to match this shape, not free text to parse by hand.
+
+### Real example runs (not hypothetical)
+
+Ran against two very different real repos to check the model genuinely *chooses* tools rather than following one fixed sequence:
+
+- **`octocat/Hello-World`** (GitHub's canonical demo repo — high stars/forks purely from people practicing Git, essentially no content): called `get_repo_metadata` → `get_readme` → `get_repo_structure`, then correctly reasoned in its summary that the ~3,700 stars and ~6,750 open issues don't indicate a real, active software project — they're artifacts of it being a teaching fixture, not a signal of genuine health.
+- **`psf/requests`** (a large, mature, real Python library): called `get_repo_metadata` → `get_readme` → **`get_commit_history`** — and *skipped* `get_repo_structure`/`get_file_contents` entirely, because the README already made the tech stack and purpose obvious. It also correctly noticed that recent commits were mostly automated Dependabot dependency bumps rather than feature work, and reasoned that this is normal for "a mature, stable library" rather than a sign of neglect.
+
+Two different repos produced two genuinely different tool-call sequences — real evidence of the model choosing tools based on what it finds, not a hardcoded script.
+
+### Comparison with the Nimbus agent
+
+| | Nimbus agent (`agent.py`) | Repo summarizer (`repo_summarizer/agent.py`) |
+|---|---|---|
+| Tool surface | Local: calculator, a RAG retriever over a fixed 5-doc corpus, DuckDuckGo web search | External: 5 live GitHub REST API calls, no local data at all |
+| Patterns demonstrated | All four: plan, act/observe, reflect, minimal multi-agent | Two: tool-calling loop, structured output |
+| Knowledge base | Fixed, pre-ingested (`chroma_db/`) | None — freshly fetched per run, different every time the target repo changes |
+| Structured output used for | A critic's approve/revise verdict | The final summary itself |
+| Reused from Week 3/4 | Yes — `chunking.py`, `rag_tool.py`, `corpus/*.md`, `ingest.py` | No — entirely new tools and a fresh domain |
+
+### Tests
+
+```bash
+python -m pytest repo_summarizer/tests/ -q
+```
+
+All 5 tools are tested with mocked `requests.get` responses (via `unittest.mock.patch`) — realistic success cases, 404s, an empty directory, a truncated long README, and the "wrong endpoint shape" cases (asking for a file that's actually a directory or vice versa). Deliberately not live-network tests: mocking keeps them instant, deterministic, and free of any rate-limit risk, at the cost of not verifying GitHub's API still behaves the way these tests assume — the two real end-to-end runs above are what actually confirm that.
+
+### What's not done here, and why
+
+- **No LangChain community `GitHubToolkit`.** It exists (`langchain_community.agent_toolkits.github`), but it's built around a GitHub App and a single fixed `GITHUB_REPOSITORY` env var — designed for managing one repo you own (creating issues, PRs), not for reading arbitrary public repos on the fly. Hand-rolling the 5 tools above was both a better fit and better practice for the actual tool-binding skill this week is about.
+- **No handling for private repos.** `GITHUB_TOKEN` (if set) only helps with rate limits here — none of the tools pass any repo-specific auth, so a private repo you have access to would still 404 exactly like one you don't. Same-shape fix as the public case (pass the token through), just not built.
+- **No comparison mode** (Level 4 from the original idea — summarizing two repos side by side). Would reuse everything here unchanged, just called twice and diffed; not built since it wasn't needed to demonstrate the core checkpoint skills.
+
 ## What's done vs. not done, and why
 
 **Done:**
@@ -176,6 +265,7 @@ Same position as Week 4: no formal precision/recall/Hit@k evaluation was built f
 - Real RAG retriever wired in as a tool (`search_knowledge_base`, unchanged from Week 3/4)
 - Tests adapted for LangChain's tool-call interface, all passing
 - A genuine, measured line-count comparison against Week 4, with the caveat that the `web_search` change (not just the framework) accounts for a real part of it
+- A second, independent agent (`repo_summarizer/`) applying the same `bind_tools`/`with_structured_output` skills to a live external API instead of local RAG — verified against two real, very different public repos, showing genuinely different tool-call sequences per repo, not a fixed script
 
 **Not done, and why:**
 - **LangChain's own retriever abstraction (`VectorStore.as_retriever()` + `create_retriever_tool`) wasn't used.** `search_knowledge_base` is still the hand-rolled hybrid+rerank function from Week 3/4, just wrapped in `@tool`. Reason: that pipeline (BM25 fusion, cross-encoder reranking) is more sophisticated than LangChain's default similarity-search retriever, and re-implementing it in LangChain's abstractions wasn't the point of this week — the point was the *agent* loop, not re-deriving retrieval quality already validated in Week 3.

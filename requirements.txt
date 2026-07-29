@@ -2,6 +2,7 @@ langchain
 langchain-anthropic
 langchain-community
 ddgs
+requests
 python-dotenv
 chromadb
 sentence-transformers

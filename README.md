@@ -252,6 +252,18 @@ python -m pytest repo_summarizer/tests/ -q
 
 All 5 tools are tested with mocked `requests.get` responses (via `unittest.mock.patch`) — realistic success cases, 404s, an empty directory, a truncated long README, and the "wrong endpoint shape" cases (asking for a file that's actually a directory or vice versa). Deliberately not live-network tests: mocking keeps them instant, deterministic, and free of any rate-limit risk, at the cost of not verifying GitHub's API still behaves the way these tests assume — the two real end-to-end runs above are what actually confirm that.
 
+### A bug we actually hit while testing this
+
+Ran this agent against its own repository (`SujinJK/Week_5_Handson`) as a test, and it crashed:
+
+```
+UnicodeEncodeError: 'charmap' codec can't encode character '→' in position 103
+```
+
+Same root cause as Week 4's "Windows console encoding crash" bug (see [Week 4's README](../Week_4_Handson/README.md#bugs-we-actually-hit-while-building-this-and-what-they-taught-us)) and even Week 5's own `agent.py` — but `repo_summarizer/agent.py` is a separate file, hand-written fresh, and the fix wasn't carried over into it. This project's *own* README contains `→` arrows (e.g. "plan → act/observe → reflect"), so `get_readme` fetched a string containing U+2192, and printing that tool-result preview crashed the whole run on Windows' default `cp1252` console codepage — the exact same failure mode, just triggered by a genuinely new source of Unicode text (a live-fetched README) that the original fix was never tested against. Fixed the same way as before: force `sys.stdout` to UTF-8 at startup.
+
+The honest lesson: copying a fix once doesn't mean copying it everywhere it's needed. A second, independent file doing similar I/O (printing arbitrary fetched text) needs the same defensive fix applied again, deliberately — it doesn't propagate on its own just because the same bug class was already solved once in this project.
+
 ### What's not done here, and why
 
 - **No LangChain community `GitHubToolkit`.** It exists (`langchain_community.agent_toolkits.github`), but it's built around a GitHub App and a single fixed `GITHUB_REPOSITORY` env var — designed for managing one repo you own (creating issues, PRs), not for reading arbitrary public repos on the fly. Hand-rolling the 5 tools above was both a better fit and better practice for the actual tool-binding skill this week is about.

@@ -28,6 +28,15 @@ from typing import Literal
 
 from repo_summarizer.github_tools import TOOLS, TOOLS_BY_NAME
 
+# Same fix as ../agent.py: a fetched README or file can contain Unicode
+# characters (e.g. the arrows in this project's own README, U+2192) that
+# Windows' default console codepage (cp1252) can't print -- without this,
+# printing a tool-call preview containing one crashes the whole run instead
+# of just showing the wrong glyph. Confirmed live: summarizing this very
+# repo's own README is exactly what triggered it before this fix.
+if sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 load_dotenv()
 
 MODEL = "claude-opus-4-8"
